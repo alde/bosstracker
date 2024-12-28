@@ -1,5 +1,3 @@
-local addonName, addonTable = ...
-
 local function getInstanceData(allstates, event, ...)
     -- Collect Lockouts
     local lockouts = {}
@@ -19,25 +17,7 @@ local function getInstanceData(allstates, event, ...)
         end
     end
     
-    return lockouts    
-end
-
-
-local function dump(o)
-    if type(o) == 'table' then
-       local s = '{ '
-       for k,v in pairs(o) do
-          if type(k) ~= 'number' then k = '"'..k..'"' end
-          s = s .. '['..k..'] = ' .. dump(v) .. ','
-       end
-       return s .. '} '
-    else
-       return tostring(o)
-    end
-end
-SLASH_MYTREEADDON1 = "/mytree"
-SlashCmdList["MYTREEADDON"] = function(msg)
-    MyTreeAddon_ShowTreeView()
+    return lockouts
 end
 
 local function AddTreeLabel(parent, label, offsetY, onClick)
@@ -55,32 +35,29 @@ local function AddTreeLabel(parent, label, offsetY, onClick)
 end
 
 local function UpdateDynamicPositions(content)
-    local offsetY = -10 -- Start from the top
+    local offsetY = -10
     for _, child in ipairs({ content:GetChildren() }) do
         if child.label and child:IsShown() then
-            -- Position the instance label
             child:SetPoint("TOPLEFT", 10, offsetY)
             offsetY = offsetY - child.label:GetHeight() - 5
 
-            -- Position the boss frame if visible
             if child.bossFrame:IsShown() then
-                child.bossFrame:SetPoint("TOPLEFT", child.label, "BOTTOMLEFT", 0, -5) -- Relative to instance label
+                child.bossFrame:SetPoint("TOPLEFT", child.label, "BOTTOMLEFT", 0, -5)
                 offsetY = offsetY - child.bossFrame:GetHeight() - 5
             end
         end
     end
-    content:SetHeight(math.abs(offsetY)) -- Adjust the container height dynamically
+    content:SetHeight(math.abs(offsetY))
 end
 
 local function PopulateTree(content, getInstanceData, showLockedOnly)
     local instanceData = getInstanceData()
 
-    -- Clear previous content
+    -- Hide all children first
     for _, child in ipairs({ content:GetChildren() }) do
         child:Hide()
     end
 
-    -- Filter instance data based on the checkbox value
     if showLockedOnly then
         local filteredData = {}
         for _, instance in ipairs(instanceData) do
@@ -91,38 +68,31 @@ local function PopulateTree(content, getInstanceData, showLockedOnly)
         instanceData = filteredData
     end
 
-    -- Reset offsetY to start from the top
     local offsetY = -10
 
-    -- Render filtered instances
     for _, instance in ipairs(instanceData) do
-        -- Create a parent frame for each instance
         local instanceFrame = CreateFrame("Frame", nil, content)
-        instanceFrame:SetSize(250, 1) -- Width is fixed; height will adjust dynamically
+        instanceFrame:SetSize(250, 1)
 
-        -- Create the instance label
         instanceFrame.label = AddTreeLabel(
             instanceFrame,
             string.format("%s (%s)", instance.instanceName, instance.difficulty),
             offsetY,
             function()
-                -- Toggle visibility of the boss frame
                 if instanceFrame.bossFrame:IsShown() then
                     instanceFrame.bossFrame:Hide()
                 else
                     instanceFrame.bossFrame:Show()
                 end
-                UpdateDynamicPositions(content) -- Adjust positions dynamically
+                UpdateDynamicPositions(content)
             end
         )
 
-        -- Update offsetY for the next element
         offsetY = offsetY - instanceFrame.label:GetHeight() - 5
 
-        -- Create a frame for the boss list
         instanceFrame.bossFrame = CreateFrame("Frame", nil, content)
         instanceFrame.bossFrame:SetSize(250, 1)
-        instanceFrame.bossFrame:Hide() -- Initially hidden
+        instanceFrame.bossFrame:Hide()
 
         local bossOffsetY = -5
         for _, boss in ipairs(instance.bosses) do
@@ -132,70 +102,110 @@ local function PopulateTree(content, getInstanceData, showLockedOnly)
                 bossOffsetY
             )
             if boss.dead then
-                bossLabel:SetTextColor(1, 0, 0, 1) -- Red for dead
+                bossLabel:SetTextColor(1, 0, 0, 1)
             else
-                bossLabel:SetTextColor(0, 1, 0, 1) -- Green for alive
+                bossLabel:SetTextColor(0, 1, 0, 1)
             end
             bossOffsetY = bossOffsetY - bossLabel:GetHeight() - 5
         end
 
-        -- Set the height of the boss frame dynamically
         instanceFrame.bossFrame:SetHeight(math.abs(bossOffsetY))
 
-        -- Add the instance frame to the content
         instanceFrame:Show()
     end
 
-    -- Update dynamic layout positions after populating
     UpdateDynamicPositions(content)
 end
 
-function MyTreeAddon_ShowTreeView()
-    if not MyTreeFrame then
-        -- Create the main frame
-        MyTreeFrame = CreateFrame("Frame", "MyTreeFrame", UIParent, "BasicFrameTemplateWithInset")
-        MyTreeFrame:SetSize(300, 400)
-        MyTreeFrame:SetPoint("CENTER")
-        MyTreeFrame:EnableMouse(true)
-        MyTreeFrame:SetMovable(true)
-        MyTreeFrame:RegisterForDrag("LeftButton")
-        MyTreeFrame:SetScript("OnDragStart", MyTreeFrame.StartMoving)
-        MyTreeFrame:SetScript("OnDragStop", MyTreeFrame.StopMovingOrSizing)
+-- Create a frame for event handling
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
 
-        -- Title text
-        local title = MyTreeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        title:SetPoint("CENTER", MyTreeFrame.TitleBg, "CENTER", 0, 0)
-        title:SetText("My Tree View")
+-- Slash command to toggle the frame
+SLASH_BOSSTRACKER1 = "/bosstracker"
+local BossTrackerFrame -- Declare the frame at the top so it can be accessed globally
+SlashCmdList.BOSSTRACKER = function()
+    if not BossTrackerFrame then
+        print("Boss Tracker has not been initialized yet.")
+        return
+    end
+    if BossTrackerFrame:IsShown() then
+        BossTrackerDB.showBossTracker = false
+        BossTrackerFrame:Hide()
+    else
+        BossTrackerDB.showBossTracker = true
+        BossTrackerFrame:Show()
+    end
+end
+-- Function to initialize the addon
+local function InitializeBossTracker()
+    -- Ensure saved variables are initialized
+    BossTrackerDB = BossTrackerDB or {
+        position = { x = 0, y = 0 },
+        showLockedOnly = false, -- Default state for the checkbox
+        showBossTracker = false,
+    }
 
-        -- Tree view container
-        local scrollFrame = CreateFrame("ScrollFrame", nil, MyTreeFrame, "UIPanelScrollFrameTemplate")
-        scrollFrame:SetPoint("TOPLEFT", 10, -30)
-        scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
+    -- Create the main frame
+    BossTrackerFrame = CreateFrame("Frame", "BossTrackerFrame", UIParent, "BackdropTemplate")
+    BossTrackerFrame:SetSize(300, 400)
+    BossTrackerFrame:SetPoint("CENTER", UIParent, "CENTER", BossTrackerDB.position.x, BossTrackerDB.position.y)
+    BossTrackerFrame:SetMovable(true)
+    BossTrackerFrame:EnableMouse(true)
+    BossTrackerFrame:RegisterForDrag("LeftButton")
+    BossTrackerFrame:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
+    BossTrackerFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local x, y = self:GetCenter()
+        BossTrackerDB.position.x = x - UIParent:GetWidth() / 2
+        BossTrackerDB.position.y = y - UIParent:GetHeight() / 2
+    end)
+    BossTrackerFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets = { left = 8, right = 8, top = 8, bottom = 8 }
+    })
 
-        local content = CreateFrame("Frame", nil, scrollFrame)
-        content:SetSize(260, 1) -- Initial height
-        scrollFrame:SetScrollChild(content)
-
-        -- Create the checkbox for filtering locked instances
-        local filterLabel = MyTreeFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        filterLabel:SetPoint("TOPLEFT", MyTreeFrame, "TOPLEFT", 10, -10)
-        filterLabel:SetText("Show locked instances only:")
-
-        local lockedCheckbox = CreateFrame("CheckButton", nil, MyTreeFrame, "UICheckButtonTemplate")
-        lockedCheckbox:SetPoint("TOPLEFT", filterLabel, "BOTTOMLEFT", 0, -5)
-        lockedCheckbox:SetScript("OnClick", function()
-            -- Reset offsetY when filtering
-            content:SetHeight(0)  -- Reset the height to force a refresh
-            PopulateTree(content, getInstanceData, lockedCheckbox:GetChecked())
-        end)
-
-        -- Populate the tree view with dynamic data
-        PopulateTree(content, getInstanceData, lockedCheckbox:GetChecked())
+    if not BossTrackerDB.showBossTracker then
+        BossTrackerFrame:Hide()
     end
 
-    MyTreeFrame:Show()
+    -- Create the checkbox
+    local lockedCheckbox = CreateFrame("CheckButton", nil, BossTrackerFrame, "UICheckButtonTemplate")
+    lockedCheckbox:SetPoint("TOPLEFT", BossTrackerFrame, "TOPLEFT", 10, -10)
+    lockedCheckbox.text = lockedCheckbox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lockedCheckbox.text:SetPoint("LEFT", lockedCheckbox, "RIGHT", 5, 0)
+    lockedCheckbox.text:SetText("Show Locked Instances Only")
+    lockedCheckbox:SetChecked(BossTrackerDB.showLockedOnly)
+
+    -- Create the content frame for the tree
+    local scrollFrame = CreateFrame("ScrollFrame", nil, BossTrackerFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", lockedCheckbox, "BOTTOMLEFT", 0, -10)
+    scrollFrame:SetPoint("BOTTOMRIGHT", BossTrackerFrame, "BOTTOMRIGHT", -30, 10)
+
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(1, 1)
+    scrollFrame:SetScrollChild(content)
+
+    lockedCheckbox:SetScript("OnClick", function()
+        BossTrackerDB.showLockedOnly = lockedCheckbox:GetChecked()
+        PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
+    end)
+
+
+    -- Populate the tree on load
+    PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
 end
 
-
-
-MyTreeAddon_ShowTreeView()
+-- Event handler for ADDON_LOADED
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "ADDON_LOADED" and arg1 == "bosstracker" then
+        InitializeBossTracker()
+        self:UnregisterEvent("ADDON_LOADED")
+    end
+end)

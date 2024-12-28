@@ -2,5 +2,6 @@
 ## Title: Boss Tracker
 ## Author: Rickard Dybeck
 ## Version: 1.0
+## SavedVariablesPerCharacter: BossTrackerDB
 
 bosstracker.lua
