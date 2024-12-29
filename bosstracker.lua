@@ -1,4 +1,4 @@
-local function getInstanceData(allstates, event, ...)
+local function getInstanceData()
     -- Collect Lockouts
     local lockouts = {}
     local numsaved = GetNumSavedInstances() or 0
@@ -10,13 +10,13 @@ local function getInstanceData(allstates, event, ...)
             locked = locked,
             bosses = {}
         }
-        
-        for b=1, numBosses do
+
+        for b = 1, numBosses do
             local bossName, _, isKilled = GetSavedInstanceEncounterInfo(i, b);
-            lockouts[i].bosses[b] = {name=bossName, dead=isKilled}
+            lockouts[i].bosses[b] = { name = bossName, dead = isKilled }
         end
     end
-    
+
     return lockouts
 end
 
@@ -24,7 +24,7 @@ local function AddTreeLabel(parent, label, offsetY, onClick)
     local fontString = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fontString:SetPoint("TOPLEFT", 10, offsetY)
     fontString:SetText(label)
-    fontString:SetTextColor(1, 1, 1, 1) -- White text
+    fontString:SetTextColor(1, 1, 1, 1)
 
     if onClick then
         fontString:EnableMouse(true)
@@ -121,14 +121,13 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 
+-- Declare the frame at the top so it can be accessed globally
+local BossTrackerFrame
+
 -- Slash command to toggle the frame
 SLASH_BOSSTRACKER1 = "/bosstracker"
-local BossTrackerFrame -- Declare the frame at the top so it can be accessed globally
+
 SlashCmdList.BOSSTRACKER = function()
-    if not BossTrackerFrame then
-        print("Boss Tracker has not been initialized yet.")
-        return
-    end
     if BossTrackerFrame:IsShown() then
         BossTrackerDB.showBossTracker = false
         BossTrackerFrame:Hide()
@@ -137,6 +136,7 @@ SlashCmdList.BOSSTRACKER = function()
         BossTrackerFrame:Show()
     end
 end
+
 -- Function to initialize the addon
 local function InitializeBossTracker()
     -- Ensure saved variables are initialized

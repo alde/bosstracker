@@ -10,3 +10,7 @@ Use `/bosstracker` to show or hide the Boss Tracker Frame.
 Use the checkbox to only show instances that are locked for this lockout.
 
 Click an instance to show killed (red) and unkilled (green) bosses.
+
+# Screenshot
+
+![screenshot](./images/screenshot.png)
