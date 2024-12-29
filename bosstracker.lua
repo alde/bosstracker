@@ -197,6 +197,17 @@ local function InitializeBossTracker()
         PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
     end)
 
+    -- BossTrackerFrame:RegisterEvent("ENCOUNTER_END")
+    -- BossTrackerFrame:SetScript("OnEvent", function(self, event, ...)
+    --     if event == "ENCOUNTER_END" then
+    --         local encounterID, encounterName, difficultyID, groupSize, success = ...
+
+    --         if success == 1 then
+    --             print("Boss defeated: " .. encounterName .. " - refreshing")
+    --             PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
+    --         end
+    --     end
+    -- end)
 
     -- Populate the tree on load
     PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
