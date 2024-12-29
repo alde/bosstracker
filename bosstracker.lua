@@ -1,23 +1,45 @@
+InstanceData = {}
+
+local function BossTrackerPrint(message)
+    local addonPrefix = "|cff00ffff[BossTracker]|r"
+    print(addonPrefix .. " " .. message)
+end
+
+
 local function getInstanceData()
-    -- Collect Lockouts
     local lockouts = {}
     local numsaved = GetNumSavedInstances() or 0
     for i = 1, numsaved do
         local name, _, _, _, locked, _, _, _, _, difficultyName, numBosses, _, _, _ = GetSavedInstanceInfo(i)
-        lockouts[i] = {
-            instanceName = name,
-            difficulty = difficultyName,
-            locked = locked,
-            bosses = {}
-        }
+        if locked then
+            lockouts[#lockouts + 1] = {
+                instanceName = name,
+                difficulty = difficultyName,
+                bosses = {}
+            }
 
-        for b = 1, numBosses do
-            local bossName, _, isKilled = GetSavedInstanceEncounterInfo(i, b);
-            lockouts[i].bosses[b] = { name = bossName, dead = isKilled }
+            for b = 1, numBosses do
+                local bossName, _, isKilled = GetSavedInstanceEncounterInfo(i, b)
+                lockouts[#lockouts].bosses[#lockouts[#lockouts].bosses + 1] = {
+                    name = bossName,
+                    dead = isKilled
+                }
+            end
         end
     end
 
     return lockouts
+end
+
+local function ClearFrameChildren(frame)
+    if not frame then
+        return
+    end
+    local children = { frame:GetChildren() }
+    for _, child in ipairs(children) do
+        child:Hide()
+        child:SetParent(nil)
+    end
 end
 
 local function AddTreeLabel(parent, label, offsetY, onClick)
@@ -50,49 +72,41 @@ local function UpdateDynamicPositions(content)
     content:SetHeight(math.abs(offsetY))
 end
 
-local function PopulateTree(content, getInstanceData, showLockedOnly)
-    local instanceData = getInstanceData()
 
-    -- Hide all children first
-    for _, child in ipairs({ content:GetChildren() }) do
-        child:Hide()
-    end
-
-    if showLockedOnly then
-        local filteredData = {}
-        for _, instance in ipairs(instanceData) do
-            if instance.locked then
-                table.insert(filteredData, instance)
-            end
-        end
-        instanceData = filteredData
-    end
+local function PopulateTree(contentFrame)
+    ClearFrameChildren(contentFrame)
 
     local offsetY = -10
-
-    for _, instance in ipairs(instanceData) do
-        local instanceFrame = CreateFrame("Frame", nil, content)
+    for _, instance in ipairs(InstanceData) do
+        local instanceFrame = CreateFrame("Frame", nil, contentFrame)
         instanceFrame:SetSize(250, 1)
+        local instanceKey = string.format("%s (%s)", instance.instanceName, instance.difficulty)
 
         instanceFrame.label = AddTreeLabel(
             instanceFrame,
-            string.format("%s (%s)", instance.instanceName, instance.difficulty),
+            instanceKey,
             offsetY,
             function()
                 if instanceFrame.bossFrame:IsShown() then
+                    BossTrackerDB.expanded[instanceKey] = false
                     instanceFrame.bossFrame:Hide()
                 else
+                    BossTrackerDB.expanded[instanceKey] = true
                     instanceFrame.bossFrame:Show()
                 end
-                UpdateDynamicPositions(content)
+                UpdateDynamicPositions(contentFrame)
             end
         )
 
         offsetY = offsetY - instanceFrame.label:GetHeight() - 5
 
-        instanceFrame.bossFrame = CreateFrame("Frame", nil, content)
+        instanceFrame.bossFrame = CreateFrame("Frame", nil, contentFrame)
         instanceFrame.bossFrame:SetSize(250, 1)
-        instanceFrame.bossFrame:Hide()
+        if BossTrackerDB.expanded[instanceKey] then
+            instanceFrame.bossFrame:Show()
+        else
+            instanceFrame.bossFrame:Hide()
+        end
 
         local bossOffsetY = -5
         for _, boss in ipairs(instance.bosses) do
@@ -110,41 +124,26 @@ local function PopulateTree(content, getInstanceData, showLockedOnly)
         end
 
         instanceFrame.bossFrame:SetHeight(math.abs(bossOffsetY))
-
-        instanceFrame:Show()
     end
 
-    UpdateDynamicPositions(content)
+    UpdateDynamicPositions(contentFrame)
 end
 
--- Create a frame for event handling
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 
--- Declare the frame at the top so it can be accessed globally
-local BossTrackerFrame
+local BossTrackerFrame, contentFrame
 
--- Slash command to toggle the frame
-SLASH_BOSSTRACKER1 = "/bosstracker"
-
-SlashCmdList.BOSSTRACKER = function()
-    if BossTrackerFrame:IsShown() then
-        BossTrackerDB.showBossTracker = false
-        BossTrackerFrame:Hide()
-    else
-        BossTrackerDB.showBossTracker = true
-        BossTrackerFrame:Show()
-    end
-end
-
--- Function to initialize the addon
 local function InitializeBossTracker()
     -- Ensure saved variables are initialized
     BossTrackerDB = BossTrackerDB or {
         position = { x = 0, y = 0 },
-        showLockedOnly = false, -- Default state for the checkbox
         showBossTracker = false,
+        expanded = {},
     }
+
+    -- Ensure the expanded piece exists for old installations
+    if not BossTrackerDB.expanded then
+        BossTrackerDB.expanded = {}
+    end
 
     -- Create the main frame
     BossTrackerFrame = CreateFrame("Frame", "BossTrackerFrame", UIParent, "BackdropTemplate")
@@ -171,52 +170,116 @@ local function InitializeBossTracker()
         insets = { left = 8, right = 8, top = 8, bottom = 8 }
     })
 
+    -- Create the content frame for the tree
+    local scrollFrame = CreateFrame("ScrollFrame", nil, BossTrackerFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", BossTrackerFrame, "TOPLEFT", 10, -10)
+    scrollFrame:SetPoint("BOTTOMRIGHT", BossTrackerFrame, "BOTTOMRIGHT", -30, 10)
+
+
+    -- Create the content frame for the tree
+    contentFrame = CreateFrame("Frame", nil, scrollFrame)
+    contentFrame:SetSize(280, 380)
+    scrollFrame:SetScrollChild(contentFrame)
+
+    -- Populate the tree initially
+    InstanceData = getInstanceData()
+    PopulateTree(contentFrame)
+
     if not BossTrackerDB.showBossTracker then
         BossTrackerFrame:Hide()
     end
-
-    -- Create the checkbox
-    local lockedCheckbox = CreateFrame("CheckButton", nil, BossTrackerFrame, "UICheckButtonTemplate")
-    lockedCheckbox:SetPoint("TOPLEFT", BossTrackerFrame, "TOPLEFT", 10, -10)
-    lockedCheckbox.text = lockedCheckbox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lockedCheckbox.text:SetPoint("LEFT", lockedCheckbox, "RIGHT", 5, 0)
-    lockedCheckbox.text:SetText("Show Locked Instances Only")
-    lockedCheckbox:SetChecked(BossTrackerDB.showLockedOnly)
-
-    -- Create the content frame for the tree
-    local scrollFrame = CreateFrame("ScrollFrame", nil, BossTrackerFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", lockedCheckbox, "BOTTOMLEFT", 0, -10)
-    scrollFrame:SetPoint("BOTTOMRIGHT", BossTrackerFrame, "BOTTOMRIGHT", -30, 10)
-
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(1, 1)
-    scrollFrame:SetScrollChild(content)
-
-    lockedCheckbox:SetScript("OnClick", function()
-        BossTrackerDB.showLockedOnly = lockedCheckbox:GetChecked()
-        PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
-    end)
-
-    -- BossTrackerFrame:RegisterEvent("ENCOUNTER_END")
-    -- BossTrackerFrame:SetScript("OnEvent", function(self, event, ...)
-    --     if event == "ENCOUNTER_END" then
-    --         local encounterID, encounterName, difficultyID, groupSize, success = ...
-
-    --         if success == 1 then
-    --             print("Boss defeated: " .. encounterName .. " - refreshing")
-    --             PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
-    --         end
-    --     end
-    -- end)
-
-    -- Populate the tree on load
-    PopulateTree(content, getInstanceData, BossTrackerDB.showLockedOnly)
 end
 
--- Event handler for ADDON_LOADED
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == "bosstracker" then
-        InitializeBossTracker()
-        self:UnregisterEvent("ADDON_LOADED")
+-- Slash command to toggle the frame
+SLASH_BOSSTRACKER1 = "/bosstracker"
+SlashCmdList.BOSSTRACKER = function()
+    if BossTrackerFrame:IsShown() then
+        BossTrackerFrame:Hide()
+        BossTrackerDB.showBossTracker = false
+    else
+        BossTrackerFrame:Show()
+        BossTrackerDB.showBossTracker = true
+    end
+end
+
+-- Event handling for boss defeats
+local function UpdateBossStatus(bossName, isDead)
+    for _, instance in ipairs(InstanceData) do
+        for _, boss in ipairs(instance.bosses) do
+            if boss.name == bossName then
+                boss.dead = isDead
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function HandleNewInstance(encounterName)
+    local numsaved = GetNumSavedInstances() or 0
+    for i = 1, numsaved do
+        local name, _, _, _, locked, _, _, _, _, difficultyName, numBosses = GetSavedInstanceInfo(i)
+        if locked then
+            -- Check if this instance already exists in InstanceData
+            local instanceExists = false
+            for _, instance in ipairs(InstanceData) do
+                if instance.instanceName == name and instance.difficulty == difficultyName then
+                    instanceExists = true
+                    break
+                end
+            end
+
+            if not instanceExists then
+                -- Add the new instance to InstanceData
+                local instanceKey = string.format("%s (%s)", name, difficultyName)
+                BossTrackerPrint("Adding new instance: " .. instanceKey)
+                local newInstance = {
+                    instanceName = name,
+                    difficulty = difficultyName,
+                    bosses = {}
+                }
+
+                for b = 1, numBosses do
+                    local bossName, _, isKilled = GetSavedInstanceEncounterInfo(i, b)
+                    newInstance.bosses[b] = { name = bossName, dead = isKilled }
+                end
+
+                table.insert(InstanceData, newInstance)
+                return true -- Return true if a new instance was added
+            end
+        end
+    end
+
+    return false -- Return false if no new instance was added
+end
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("ENCOUNTER_END")
+eventFrame:SetScript("OnEvent", function(_, event, ...)
+    if event == "ADDON_LOADED" then
+        local addonName = ...
+        if addonName == "bosstracker" then
+            InitializeBossTracker()
+        end
+    elseif event == "ENCOUNTER_END" then
+        local encounterID, encounterName, difficultyID, groupSize, success = ...
+        if success == 1 then
+            BossTrackerPrint("Boss defeated: " .. encounterName)
+
+            -- Check if the boss is in an existing instance
+            local updated = UpdateBossStatus(encounterName, true)
+            if not updated then
+                BossTrackerPrint("Boss not found in instance data. Checking for new instance...")
+                if HandleNewInstance(encounterName) then
+                    BossTrackerPrint("New instance added to InstanceData.")
+                else
+                    BossTrackerPrint("No matching instance found for the defeated boss.")
+                end
+            end
+
+            -- Refresh the tree
+            PopulateTree(contentFrame)
+        end
     end
 end)
